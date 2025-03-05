@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeadBox - {% block title %}{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .navbar-brand img {
+            height: 40px;
+            width: auto;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Abet Works Logo">
+            </a>
+            {% if current_user.is_authenticated and current_user.role == 'admin' %}
+            <a class="nav-link text-white" href="{{ url_for('client_list') }}">
+                <i class="fas fa-users"></i> Clients
+            </a>
+            {% endif %}
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('index') }}">Leads</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('new_lead') }}">Add Lead</a>
+                    </li>
+                    {% if current_user.role == 'admin' %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('dashboard') }}">Database Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('register') }}">Register User</a>
+                    </li>
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav">
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item">
+                        <span class="nav-link">{{ current_user.username }} ({{ current_user.role }})</span>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('login') }}">Login</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Search and filter functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchForm = document.getElementById('searchForm');
+            if (searchForm) {
+                const searchName = document.getElementById('searchName');
+                const searchCompany = document.getElementById('searchCompany');
+                const searchEmail = document.getElementById('searchEmail');
+                const filterStage = document.getElementById('filterStage');
+                const tableRows = document.querySelectorAll('tbody tr');
+
+                function filterTable() {
+                    const nameFilter = searchName.value.toLowerCase();
+                    const companyFilter = searchCompany.value.toLowerCase();
+                    const emailFilter = searchEmail.value.toLowerCase();
+                    const stageFilter = filterStage.value;
+
+                    tableRows.forEach(row => {
+                        const name = row.cells[0].textContent.toLowerCase();
+                        const company = row.cells[1].textContent.toLowerCase();
+                        const email = row.cells[2].textContent.toLowerCase();
+                        const stage = row.cells[4].querySelector('select').value;
+
+                        const matchesName = name.includes(nameFilter);
+                        const matchesCompany = company.includes(companyFilter);
+                        const matchesEmail = email.includes(emailFilter);
+                        const matchesStage = !stageFilter || stage === stageFilter;
+
+                        row.style.display = (matchesName && matchesCompany && matchesEmail && matchesStage) ? '' : 'none';
+                    });
+                }
+
+                searchName.addEventListener('input', filterTable);
+                searchCompany.addEventListener('input', filterTable);
+                searchEmail.addEventListener('input', filterTable);
+                filterStage.addEventListener('change', filterTable);
+            }
+        });
+
+        // Lead assignment functionality
+        function assignLead(leadId) {
+            fetch('/api/users')
+                .then(response => response.json())
+                .then(users => {
+                    const clientUsers = users.filter(user => user.role === 'client');
+                    const userOptions = clientUsers.map(user =>
+                        `<option value="${user.id}">${user.username}</option>`
+                    ).join('');
+
+                    const modal = `
+                        <div class="modal fade" id="assignLeadModal" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Assign Lead</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <select class="form-select" id="assignToUser">
+                                            <option value="">Select a client...</option>
+                                            ${userOptions}
+                                        </select>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-primary" onclick="confirmAssignment(${leadId})">Assign</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`;
+
+                    document.body.insertAdjacentHTML('beforeend', modal);
+                    const modalElement = document.getElementById('assignLeadModal');
+                    const bsModal = new bootstrap.Modal(modalElement);
+                    bsModal.show();
+
+                    modalElement.addEventListener('hidden.bs.modal', function () {
+                        modalElement.remove();
+                    });
+                });
+        }
+
+        function confirmAssignment(leadId) {
+            const userId = document.getElementById('assignToUser').value;
+            if (!userId) {
+                alert('Please select a client');
+                return;
+            }
+
+            fetch(`/api/leads/${leadId}/assign`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ user_id: userId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert(data.error || 'Failed to assign lead');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to assign lead');
+            });
+        }
+    </script>
+</body>
+</html>
